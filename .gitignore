@@ -34,10 +34,7 @@ dist/
 .coverage
 htmlcov/
 
-# Data & outputs
-data/*.csv
-data/*.txt
-data/*.xls*
+# Outputs (保留忽略模型输出等)
 output/*.csv
 output/*.png
 
