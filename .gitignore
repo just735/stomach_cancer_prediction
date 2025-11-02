@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+
+# virtualenvs
+venv/
+venv*/
+env/
+.venv/
+venv39/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# Logs, coverage
+*.log
+.coverage
+htmlcov/
+
+# Data & outputs (不要把大数据或中间结果推送)
+data/*.csv
+data/*.txt
+data/*.xls*
+output/*.csv
+output/*.png
+
+# Local config
+.env
+local_settings.py
