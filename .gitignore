@@ -16,8 +16,6 @@ venv39/
 # IDE / Editor
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
 
 # Jupyter
 .ipynb_checkpoints
@@ -36,7 +34,7 @@ dist/
 .coverage
 htmlcov/
 
-# Data & outputs (不要把大数据或中间结果推送)
+# Data & outputs
 data/*.csv
 data/*.txt
 data/*.xls*
