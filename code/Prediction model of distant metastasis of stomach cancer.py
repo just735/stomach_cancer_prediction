@@ -18,6 +18,13 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import RandomizedSearchCV
 import scipy.stats as stats
 
+# 读取 R 导出的 CSV（样本为行，index 为 sample_id）
+import pandas as pd
+expr = pd.read_csv(r"data/normalized_expression.csv", index_col=0)
+clin = pd.read_csv(r"data/clinical_matched.csv", index_col=None)
+# 合并为训练用的 data_merged 格式
+data = expr.merge(clin, left_index=True, right_on="sample_id", how="inner").set_index("sample_id")
+
 # 原来读取 data.csv 的部分替换为读取刚生成的 data_merged.csv 并更稳健地提取标签列
 data_path = r"D:\code\Prediction-model-of-distant-metastasis-of-breast-cancer-main\data\data_merged.csv"
 data = pd.read_csv(data_path, index_col=0)
@@ -111,6 +118,21 @@ if hasattr(search, "predict_proba"):
     else:
         probs = None
 
+# 保存对全部样本的预测（可选）
+X_all = X  # 全部特征，或使用 selector.transform(X) 如果做了特征选择
+# 使用训练时的 selector 对全部样本做相同的特征选择，保证特征数一致
+try:
+    X_all_sel = selector.transform(X_all)
+except Exception:
+    # 如果 selector 不可用或转换失败，回退到原始 X_all（但会导致特征不匹配错误）
+    X_all_sel = X_all.values if hasattr(X_all, "values") else X_all
+
+preds_all = search.predict(X_all_sel)
+probs_all = None
+if hasattr(search, "predict_proba"):
+    probs_ = search.predict_proba(X_all_sel)
+    probs_all = probs_[:,1] if probs_.shape[1]==2 else None
+
 # 输出目录（确保存在）
 out_dir = r"D:\code\Prediction-model-of-distant-metastasis-of-breast-cancer-main\output"
 os.makedirs(out_dir, exist_ok=True)
@@ -122,6 +144,13 @@ if probs is not None:
 csv_path = os.path.join(out_dir, "predictions.csv")
 df_out.to_csv(csv_path, index=True)
 
+# 保存全部样本预测
+out_all = pd.DataFrame({"true": y, "pred": preds_all}, index=X_all.index)
+if probs_all is not None:
+    out_all["prob_positive"] = probs_all
+out_all.to_csv(os.path.join(out_dir, "predictions_all.csv"), index=True)
+print("已保存全部样本预测到: output/predictions_all.csv")
+
 # 评估指标
 acc = accuracy_score(y_test, preds)
 report = classification_report(y_test, preds)
@@ -131,6 +160,32 @@ auc = None
 roc_path = None
 if probs is not None:
     # 使用 best_estimator_ 的类别顺序将真实标签二值化
+    from pathlib import Path
+
+    # 优先读取 R 脚本导出的 normalized_expression.csv + clinical_matched.csv，
+    # 若不存在则回退读取 data/data_merged.csv
+    BASE_DIR = Path(__file__).resolve().parents[1]
+    expr_path = BASE_DIR / "data" / "normalized_expression.csv"
+    clin_path = BASE_DIR / "data" / "clinical_matched.csv"
+    merged_path = BASE_DIR / "data" / "data_merged.csv"
+
+    if expr_path.exists() and clin_path.exists():
+        expr = pd.read_csv(expr_path, index_col=0)
+        clin = pd.read_csv(clin_path)
+        if "sample_id" in clin.columns:
+            data = expr.merge(clin, left_index=True, right_on="sample_id", how="inner").set_index("sample_id")
+        else:
+            clin_indexed = clin.set_index(clin.columns[0])
+            data = expr.merge(clin_indexed, left_index=True, right_index=True, how="inner")
+        print(f"Loaded expr+clin: {expr_path.name} + {clin_path.name}  -> samples={data.shape[0]}, features={data.shape[1]}")
+    elif merged_path.exists():
+        data = pd.read_csv(merged_path, index_col=0)
+        print(f"Loaded merged data: {merged_path.name}  -> samples={data.shape[0]}, columns={data.shape[1]}")
+    else:
+        raise FileNotFoundError(
+            "找不到数据文件：请先运行 code/generate_merged_data.py 生成 data/data_merged.csv，\n"
+            "或将 R 脚本生成的 normalized_expression.csv 与 clinical_matched.csv 放到 data/ 目录下。"
+        )
     classes = getattr(search.best_estimator_, "classes_", None)
     try:
         y_bin = label_binarize(y_test, classes=classes)[:, 1]
@@ -161,3 +216,8 @@ print(cm)
 
 print("\n分类报告:")
 print(report)
+
+print("原始样本数:", data.shape[0])    # 如果有 data 变量
+print("X 总行数:", X.shape[0])
+print("X_train 行数:", X_train.shape[0])
+print("X_test  行数:", X_test.shape[0])
