@@ -18,12 +18,7 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import RandomizedSearchCV
 import scipy.stats as stats
 
-# 读取 R 导出的 CSV（样本为行，index 为 sample_id）
-import pandas as pd
-expr = pd.read_csv(r"data/normalized_expression.csv", index_col=0)
-clin = pd.read_csv(r"data/clinical_matched.csv", index_col=None)
-# 合并为训练用的 data_merged 格式
-data = expr.merge(clin, left_index=True, right_on="sample_id", how="inner").set_index("sample_id")
+# 读取预处理后的数据文件
 
 # 原来读取 data.csv 的部分替换为读取刚生成的 data_merged.csv 并更稳健地提取标签列
 data_path = r"D:\code\Prediction-model-of-distant-metastasis-of-breast-cancer-main\data\data_merged.csv"
@@ -133,8 +128,8 @@ if hasattr(search, "predict_proba"):
     probs_ = search.predict_proba(X_all_sel)
     probs_all = probs_[:,1] if probs_.shape[1]==2 else None
 
-# 输出目录（确保存在）
-out_dir = r"D:\code\Prediction-model-of-distant-metastasis-of-breast-cancer-main\output"
+# 输出目录（使用相对路径，确保存在）
+out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 os.makedirs(out_dir, exist_ok=True)
 
 # 构造输出表（保留测试集索引）
