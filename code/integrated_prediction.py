@@ -1,13 +1,15 @@
 import numpy as np
 import pandas as pd
 import os
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import SelectFromModel
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV, StratifiedKFold, cross_val_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.feature_selection import SelectFromModel, RFE
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, precision_recall_curve
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.linear_model import LassoCV, LogisticRegression
+from sklearn.svm import SVC
+from scipy import stats
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LassoCV
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
@@ -30,16 +32,16 @@ def load_data():
         raise
 
 # 基于LASSO的特征选择（模仿R脚本中的lasso.R）
-def lasso_feature_selection(X, y, threshold=0.01):
-    """使用LASSO回归进行特征选择"""
+def lasso_feature_selection(X, y, threshold=0.01, n_features=30):
+    """使用LASSO回归进行特征选择，优化版本"""
     print("Performing LASSO feature selection...")
     
     # 标准化特征
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    # 使用LassoCV进行交叉验证选择最优参数
-    lasso_cv = LassoCV(cv=5, random_state=42, max_iter=10000)
+    # 使用LassoCV进行交叉验证选择最优参数，增加交叉验证折数和迭代次数
+    lasso_cv = LassoCV(cv=10, random_state=42, max_iter=20000, n_jobs=-1)
     lasso_cv.fit(X_scaled, y)
     
     # 获取特征系数
@@ -49,18 +51,33 @@ def lasso_feature_selection(X, y, threshold=0.01):
     selected_features_mask = np.abs(coefficients) > threshold
     selected_features = X.columns[selected_features_mask]
     
+    # 优化特征选择策略：确保选择足够的特征，根据系数绝对值排序
+    if len(selected_features) < n_features:
+        # 如果选择的特征不足，根据系数绝对值选择最重要的n_features个
+        coef_abs = np.abs(coefficients)
+        top_indices = np.argsort(coef_abs)[::-1][:n_features]
+        selected_features = X.columns[top_indices]
+        print(f"Adjusted to {len(selected_features)} top features based on coefficient magnitude")
+    elif len(selected_features) > n_features * 2:
+        # 如果选择的特征太多，选择系数绝对值最大的特征
+        coef_abs = np.abs(coefficients[selected_features_mask])
+        top_indices = np.argsort(coef_abs)[::-1][:n_features]
+        selected_features = selected_features[top_indices]
+        print(f"Reduced to {len(selected_features)} top features based on coefficient magnitude")
+    
     print(f"LASSO selected {len(selected_features)} features")
     return X[selected_features], selected_features, coefficients
 
 # 模拟WGCNA模块特征提取（基于相关性分析）
-def wgcna_module_features(X, n_modules=5):
-    """模拟WGCNA模块分析，基于特征相关性聚类"""
+def wgcna_module_features(X, n_modules=8):
+    """改进的WGCNA模块分析，基于特征相关性聚类和模块内特征综合"""
     print("Extracting WGCNA-like module features...")
     
-    # 限制特征数量以避免计算过大的相关性矩阵
-    if X.shape[1] > 1000:
-        # 先选择方差最大的1000个特征
-        top_var_genes = X.var().nlargest(1000).index
+    # 限制特征数量以避免计算过大的相关性矩阵，增加特征数量以捕获更多信息
+    max_features = min(1500, X.shape[1])
+    if X.shape[1] > max_features:
+        # 先选择方差最大的特征
+        top_var_genes = X.var().nlargest(max_features).index
         X_reduced = X[top_var_genes]
         print(f"Reducing feature set from {X.shape[1]} to {X_reduced.shape[1]} for correlation analysis")
     else:
@@ -69,7 +86,7 @@ def wgcna_module_features(X, n_modules=5):
     # 计算特征相关性矩阵
     corr_matrix = X_reduced.corr()
     
-    # 为每个模块创建一个特征（取模块内特征的平均值）
+    # 为每个模块创建一个特征（改进：取模块内多个特征的加权平均）
     module_features = pd.DataFrame(index=X.index)
     selected_genes = []
     
@@ -98,65 +115,130 @@ def wgcna_module_features(X, n_modules=5):
         
         # 将模块特征添加到结果中
         selected_genes.append(module_gene)
-        module_features[f"module_{i+1}"] = X[module_gene]
+        
+        # 改进：找到与中心基因高度相关的特征，计算模块内特征的加权平均
+        # 找出与中心基因相关系数大于0.6的特征
+        related_genes = corr_matrix[module_gene][abs(corr_matrix[module_gene]) > 0.6].index.tolist()
+        
+        if len(related_genes) > 1:
+            # 计算加权平均（相关性作为权重）
+            weights = abs(corr_matrix[module_gene][related_genes])
+            weights = weights / weights.sum()  # 归一化权重
+            
+            # 创建加权平均特征
+            module_avg = np.zeros(len(X))
+            for j, gene in enumerate(related_genes):
+                module_avg += X[gene].values * weights.iloc[j]
+            
+            module_features[f"module_{i+1}"] = module_avg
+        else:
+            # 如果没有足够的相关特征，只使用中心基因
+            module_features[f"module_{i+1}"] = X[module_gene]
     
     print(f"Extracted {module_features.shape[1]} WGCNA-like module features")
     return module_features
 
 # 差异表达基因分析（t-test）
-def differential_expression_analysis(X, y):
-    """执行简单的差异表达分析，选择表达差异最显著的特征"""
+def differential_expression_analysis(X, y, top_n=60):
+    """改进的差异表达分析，使用更稳健的统计方法和效应量"""
     print("Performing differential expression analysis...")
     
     # 将样本分为两组
     group0 = X[y == 0]
     group1 = X[y == 1]
     
-    # 计算每个特征在两组间的平均差异和t统计量
-    diff_scores = []
+    # 计算每个特征在两组间的差异统计量
+    diff_results = []
     for col in X.columns:
-        mean0 = group0[col].mean()
-        mean1 = group1[col].mean()
-        std0 = group0[col].std() if len(group0) > 1 else 1
-        std1 = group1[col].std() if len(group1) > 1 else 1
-        
-        # 计算t统计量（简化版）
-        mean_diff = mean1 - mean0
-        pooled_std = np.sqrt(std0**2/len(group0) + std1**2/len(group1))
-        t_stat = mean_diff / pooled_std if pooled_std > 0 else 0
-        
-        diff_scores.append((col, abs(t_stat)))
+        # 使用t-test
+        try:
+            # 使用Welch's t-test（不等方差）
+            t_stat, t_pval = stats.ttest_ind(group0[col], group1[col], equal_var=False)
+            
+            # 计算效应量（Cohen's d）
+            mean0 = group0[col].mean()
+            mean1 = group1[col].mean()
+            mean_diff = mean1 - mean0
+            
+            # 计算合并标准差
+            n0, n1 = len(group0), len(group1)
+            var0, var1 = group0[col].var(), group1[col].var()
+            pooled_std = np.sqrt(((n0-1)*var0 + (n1-1)*var1) / (n0 + n1 - 2)) if n0 + n1 > 2 else 1
+            cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
+            
+            # 综合分数：结合t统计量和效应量
+            combined_score = abs(t_stat) * min(abs(cohens_d), 3)  # 限制效应量的影响范围
+            
+            diff_results.append((col, abs(t_stat), t_pval, cohens_d, combined_score))
+        except:
+            # 处理计算错误
+            diff_results.append((col, 0, 1.0, 0, 0))
     
-    # 按t统计量排序
-    diff_scores.sort(key=lambda x: x[1], reverse=True)
+    # 转换为DataFrame并按综合分数排序
+    results_df = pd.DataFrame(diff_results, 
+                             columns=['feature', 'abs_t_stat', 'p_value', 'cohens_d', 'combined_score'])
+    results_df = results_df.sort_values('combined_score', ascending=False)
     
     # 选择top差异表达基因
-    top_de_genes = [gene for gene, score in diff_scores[:50]]  # 选择top50
+    top_de_genes = results_df['feature'].head(top_n).tolist()
     
     print(f"Selected {len(top_de_genes)} top differentially expressed genes")
     return X[top_de_genes], top_de_genes
 
 # 整合特征选择方法
 def integrated_feature_selection(X, y):
-    """整合多种特征选择方法"""
+    """整合多种特征选择方法，增加特征重要性权重和特征过滤"""
     # 1. LASSO特征选择
-    X_lasso, lasso_features, _ = lasso_feature_selection(X, y)
+    X_lasso, lasso_features, lasso_coefs = lasso_feature_selection(X, y, n_features=30)
     
     # 2. 差异表达基因分析
-    X_de, de_features = differential_expression_analysis(X, y)
+    X_de, de_features = differential_expression_analysis(X, y, top_n=60)
     
     # 3. WGCNA模块特征
-    X_wgcna = wgcna_module_features(X)
+    X_wgcna = wgcna_module_features(X, n_modules=8)
     
-    # 4. 合并所有特征
-    selected_features = list(set(lasso_features) | set(de_features))
-    X_selected = X[selected_features].copy()
+    # 4. 特征重要性评分
+    feature_scores = {}
+    
+    # 为LASSO特征分配权重（基于系数绝对值）
+    lasso_coef_dict = dict(zip(lasso_features, np.abs(lasso_coefs[np.isin(X.columns, lasso_features)])))
+    lasso_max_coef = max(lasso_coef_dict.values()) if lasso_coef_dict else 1
+    for feature, coef in lasso_coef_dict.items():
+        feature_scores[feature] = feature_scores.get(feature, 0) + 3 * (coef / lasso_max_coef)  # LASSO权重最高
+    
+    # 为差异表达特征分配权重
+    for feature in de_features[:30]:  # 前30个DE特征权重更高
+        feature_scores[feature] = feature_scores.get(feature, 0) + 2
+    for feature in de_features[30:]:  # 剩余DE特征权重较低
+        feature_scores[feature] = feature_scores.get(feature, 0) + 1
+    
+    # 找出被多种方法选中的特征（可能更重要）
+    all_features = list(set(lasso_features) | set(de_features))
+    overlap_features = [f for f in all_features if f in lasso_features and f in de_features]
+    
+    # 为重叠特征增加额外权重
+    for feature in overlap_features:
+        feature_scores[feature] = feature_scores.get(feature, 0) + 1  # 重叠特征额外加分
+    
+    # 根据重要性分数选择特征
+    sorted_features = sorted(feature_scores.keys(), key=lambda x: feature_scores[x], reverse=True)
+    
+    # 限制特征数量以避免过拟合
+    max_features = min(100, len(sorted_features))
+    final_features = sorted_features[:max_features]
+    
+    # 创建最终特征集
+    X_selected = X[final_features].copy()
     
     # 添加WGCNA模块特征
     for col in X_wgcna.columns:
         X_selected[col] = X_wgcna[col]
     
+    # 打印特征选择统计信息
     print(f"Final integrated features count: {X_selected.shape[1]}")
+    if overlap_features:
+        print(f"Found {len(overlap_features)} features selected by multiple methods (potentially more reliable)")
+    
     return X_selected
 
 # 主函数
@@ -213,23 +295,76 @@ def main():
     # 保持特征顺序一致
     X_test_selected = X_test_selected[X_train_selected.columns]
     
-    # 设置随机森林参数网格
-    param_dist = {
-        'n_estimators': [50, 100, 200],
-        'max_features': ['sqrt', 'log2'],
-        'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4]
+    # 创建集成分类器，结合多种算法
+    print("Creating ensemble model with multiple algorithms...")
+    
+    # 定义基础分类器
+    classifiers = {
+        'rf': RandomForestClassifier(random_state=42),
+        'gb': GradientBoostingClassifier(random_state=42),
+        'svc': SVC(probability=True, random_state=42),
+        'lr': LogisticRegression(max_iter=1000, random_state=42)
     }
     
-    # 随机搜索最佳参数
-    search = RandomizedSearchCV(
-        RandomForestClassifier(random_state=42),
-        param_distributions=param_dist,
-        n_iter=20,
-        cv=5,
+    # 为每个分类器进行参数优化
+    best_classifiers = {}
+    
+    # 随机森林参数网格
+    rf_param_dist = {
+        'n_estimators': [100, 200, 300],
+        'max_features': ['sqrt', 'log2'],
+        'max_depth': [None, 15, 25],
+        'min_samples_split': [2, 5],
+        'min_samples_leaf': [1, 2]
+    }
+    
+    rf_search = RandomizedSearchCV(
+        classifiers['rf'],
+        param_distributions=rf_param_dist,
+        n_iter=15,
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        scoring='accuracy'
+    )
+    rf_search.fit(X_train_selected, y_train)
+    best_classifiers['rf'] = rf_search.best_estimator_
+    print(f"Best Random Forest params: {rf_search.best_params_}")
+    print(f"Random Forest CV score: {rf_search.best_score_:.4f}")
+    
+    # 梯度提升参数网格
+    gb_param_dist = {
+        'n_estimators': [100, 200],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'max_depth': [3, 4, 5],
+        'min_samples_split': [2, 5],
+        'min_samples_leaf': [1, 2]
+    }
+    
+    gb_search = RandomizedSearchCV(
+        classifiers['gb'],
+        param_distributions=gb_param_dist,
+        n_iter=15,
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
+        random_state=42,
+        n_jobs=-1,
+        scoring='accuracy'
+    )
+    gb_search.fit(X_train_selected, y_train)
+    best_classifiers['gb'] = gb_search.best_estimator_
+    print(f"Best Gradient Boosting params: {gb_search.best_params_}")
+    print(f"Gradient Boosting CV score: {gb_search.best_score_:.4f}")
+    
+    # 创建软投票集成分类器
+    search = VotingClassifier(
+        estimators=[
+            ('rf', best_classifiers['rf']),
+            ('gb', best_classifiers['gb']),
+            ('svc', classifiers['svc']),  # SVC使用默认参数
+            ('lr', classifiers['lr'])     # 逻辑回归使用默认参数
+        ],
+        voting='soft',  # 使用概率加权
+        weights=[1, 1, 1, 1]
     )
     
     # 训练模型
