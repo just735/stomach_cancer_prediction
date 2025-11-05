@@ -4,12 +4,13 @@ import os
 from sklearn.model_selection import train_test_split, RandomizedSearchCV, GridSearchCV, StratifiedKFold, cross_val_score
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.feature_selection import SelectFromModel, RFE
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, precision_recall_curve
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score, precision_recall_curve, auc, roc_curve
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.linear_model import LassoCV, LogisticRegression
 from sklearn.svm import SVC
 from scipy import stats
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
@@ -239,7 +240,8 @@ def integrated_feature_selection(X, y):
     if overlap_features:
         print(f"Found {len(overlap_features)} features selected by multiple methods (potentially more reliable)")
     
-    return X_selected
+    # 返回特征重要性分数字典，用于后续分析
+    return X_selected, feature_scores
 
 # 主函数
 def main():
@@ -270,7 +272,7 @@ def main():
     )
     
     # 应用整合特征选择
-    X_train_selected = integrated_feature_selection(X_train, y_train)
+    X_train_selected, feature_scores = integrated_feature_selection(X_train, y_train)
     
     # 对测试集应用相同的特征选择
     common_features = [col for col in X_train_selected.columns if col in X_test.columns]
@@ -442,6 +444,175 @@ def main():
     print(f"X_train 行数: {X_train.shape[0]}")
     print(f"X_test  行数: {X_test.shape[0]}")
     print(f"最终特征数: {X_train_selected.shape[1]}")
+    
+    # 可视化结果和特征重要性分析
+    print("\n生成可视化结果和特征重要性分析...")
+    visualize_results(X_test_selected, y_test, preds, probs, search, classifiers, best_classifiers, feature_scores, out_dir)
+
+# 可视化和特征重要性分析函数
+def visualize_results(X_test, y_test, preds, probs, model, classifiers, best_classifiers, feature_scores, out_dir):
+    """生成可视化结果和特征重要性分析"""
+    # 创建可视化子目录
+    viz_dir = os.path.join(out_dir, 'visualizations')
+    os.makedirs(viz_dir, exist_ok=True)
+    
+    # 1. ROC曲线
+    if probs is not None:
+        fpr, tpr, _ = roc_curve(y_test, probs)
+        roc_auc = auc(fpr, tpr)
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC曲线 (面积 = {roc_auc:.3f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('假阳性率')
+        plt.ylabel('真阳性率')
+        plt.title('接收者操作特征曲线 (ROC)')
+        plt.legend(loc="lower right")
+        roc_path = os.path.join(viz_dir, 'roc_curve.png')
+        plt.savefig(roc_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"ROC曲线已保存: {roc_path}")
+    
+    # 2. 精确率-召回率曲线
+    if probs is not None:
+        precision, recall, _ = precision_recall_curve(y_test, probs)
+        pr_auc = auc(recall, precision)
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, precision, color='green', lw=2, label=f'PR曲线 (面积 = {pr_auc:.3f})')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('召回率')
+        plt.ylabel('精确率')
+        plt.title('精确率-召回率曲线')
+        plt.legend(loc="best")
+        pr_path = os.path.join(viz_dir, 'precision_recall_curve.png')
+        plt.savefig(pr_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"精确率-召回率曲线已保存: {pr_path}")
+    
+    # 2. 混淆矩阵可视化
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(confusion_matrix(y_test, preds), annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['无转移', '有转移'], yticklabels=['无转移', '有转移'])
+    plt.xlabel('预测标签')
+    plt.ylabel('真实标签')
+    plt.title('混淆矩阵')
+    cm_path = os.path.join(viz_dir, 'confusion_matrix.png')
+    plt.savefig(cm_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"混淆矩阵可视化已保存: {cm_path}")
+    
+    # 3. 特征重要性排序图（基于特征选择分数）
+    # 过滤掉模块特征，只显示原始特征
+    original_feature_scores = {k: v for k, v in feature_scores.items() if not k.startswith('module_')}
+    sorted_features = sorted(original_feature_scores.items(), key=lambda x: x[1], reverse=True)
+    
+    # 显示前20个最重要的特征
+    top_features = sorted_features[:20]
+    feature_names = [item[0] for item in top_features]
+    importance_values = [item[1] for item in top_features]
+    
+    plt.figure(figsize=(12, 8))
+    plt.barh(range(len(top_features)), importance_values, align='center')
+    plt.yticks(range(len(top_features)), feature_names)
+    plt.xlabel('特征重要性分数')
+    plt.title('前20个最重要的特征')
+    plt.gca().invert_yaxis()  # 最重要的特征在顶部
+    features_path = os.path.join(viz_dir, 'top_features.png')
+    plt.savefig(features_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"特征重要性排序图已保存: {features_path}")
+    
+    # 4. 随机森林特征重要性（如果随机森林是集成模型的一部分）
+    if 'rf' in best_classifiers:
+        rf_importances = best_classifiers['rf'].feature_importances_
+        # 只考虑原始特征（非模块特征）
+        original_indices = [i for i, col in enumerate(X_test.columns) if not col.startswith('module_')]
+        rf_importances_original = rf_importances[original_indices]
+        original_cols = [X_test.columns[i] for i in original_indices]
+        
+        # 排序并取前15个
+        rf_sorted_idx = np.argsort(rf_importances_original)[::-1][:15]
+        rf_top_features = [original_cols[i] for i in rf_sorted_idx]
+        rf_top_importances = rf_importances_original[rf_sorted_idx]
+        
+        plt.figure(figsize=(10, 6))
+        plt.barh(range(len(rf_top_features)), rf_top_importances, align='center')
+        plt.yticks(range(len(rf_top_features)), rf_top_features)
+        plt.xlabel('随机森林特征重要性')
+        plt.title('随机森林模型中的前15个重要特征')
+        plt.gca().invert_yaxis()
+        rf_path = os.path.join(viz_dir, 'rf_feature_importance.png')
+        plt.savefig(rf_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"随机森林特征重要性图已保存: {rf_path}")
+    
+    # 5. 预测概率分布图
+    if probs is not None:
+        plt.figure(figsize=(10, 6))
+        # 分离正负样本的预测概率
+        y_test_np = np.array(y_test)
+        probs_pos = probs[y_test_np == 1]
+        probs_neg = probs[y_test_np == 0]
+        
+        # 绘制直方图
+        plt.hist(probs_neg, bins=20, alpha=0.5, label='无转移', color='blue')
+        plt.hist(probs_pos, bins=20, alpha=0.5, label='有转移', color='red')
+        plt.xlabel('预测概率 (有转移)')
+        plt.ylabel('样本数量')
+        plt.title('预测概率分布')
+        plt.legend()
+        prob_dist_path = os.path.join(viz_dir, 'prediction_probability_distribution.png')
+        plt.savefig(prob_dist_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"预测概率分布图已保存: {prob_dist_path}")
+    
+    # 6. 各分类器性能比较
+    classifiers_performance = []
+    
+    # 先评估集成模型
+    ensemble_acc = accuracy_score(y_test, preds)
+    classifiers_performance.append(('集成模型', ensemble_acc))
+    
+    # 然后评估各个基础分类器
+    for name, clf in best_classifiers.items():
+        clf_preds = clf.predict(X_test)
+        clf_acc = accuracy_score(y_test, clf_preds)
+        classifiers_performance.append((name.upper(), clf_acc))
+    
+    # 绘制性能比较图
+    models = [item[0] for item in classifiers_performance]
+    accuracies = [item[1] for item in classifiers_performance]
+    
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(models, accuracies, color=['green'] + ['blue'] * (len(models) - 1))
+    plt.ylim(0, 1)
+    plt.ylabel('准确率')
+    plt.title('各分类器性能比较')
+    
+    # 在柱状图上添加准确率数值
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                 f'{height:.3f}', ha='center', va='bottom')
+    
+    performance_path = os.path.join(viz_dir, 'classifiers_performance.png')
+    plt.savefig(performance_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"分类器性能比较图已保存: {performance_path}")
+    
+    # 保存特征重要性到CSV文件
+    features_df = pd.DataFrame(sorted_features, columns=['特征名', '重要性分数'])
+    features_df = features_df.head(50)  # 只保存前50个最重要的特征
+    features_csv_path = os.path.join(viz_dir, 'feature_importance.csv')
+    features_df.to_csv(features_csv_path, index=False)
+    print(f"特征重要性数据已保存: {features_csv_path}")
+    
+    # 打印最重要的特征列表
+    print("\n影响较大的前15个特征:")
+    for i, (feature, score) in enumerate(sorted_features[:15]):
+        print(f"{i+1}. {feature}: {score:.4f}")
 
 if __name__ == "__main__":
     main()

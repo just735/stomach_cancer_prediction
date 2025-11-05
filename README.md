@@ -52,13 +52,16 @@
 
 ### 2. 优化版集成预测模型 (`integrated_prediction.py`)
 
-**研究方法**：多特征选择方法与多模型集成的综合预测策略
+**研究方法**：多特征选择方法与多模型集成的综合预测策略，结合高级可视化分析
 
 **主要特点**：
 - 结合LASSO回归、差异表达分析和WGCNA模块分析进行多维度特征筛选
 - 构建基于特征重要性的权重系统，提高关键生物标志物的贡献
 - 集成多种机器学习算法（随机森林、梯度提升、SVC、逻辑回归）
 - 应用10折交叉验证确保模型稳定性和泛化能力
+- **新增可视化功能**：提供ROC曲线、混淆矩阵、特征重要性排序等多种直观可视化结果
+- **特征重要性分析**：详细分析并输出影响胃癌转移预测的关键生物标志物列表
+- **模型性能比较**：可视化对比各分类器的预测性能和贡献
 
 **研究价值**：
 - 提高胃癌远处转移预测的准确性和稳定性
@@ -124,6 +127,17 @@
 - `output/predictions_all_integrated.csv` —— 优化版模型的完整预测结果（包含概率）
 - `output/predictions_r_integration.csv` —— R语言集成模型的预测结果
 - `output/r_feature_selection_log.txt` —— R语言特征选择过程日志
+
+### 可视化结果文件（`output/visualizations/`目录）
+
+- `roc_curve.png` —— ROC曲线，展示模型的区分能力
+- `precision_recall_curve.png` —— 精确率-召回率曲线，评估模型在不同阈值下的性能
+- `confusion_matrix.png` —— 混淆矩阵可视化，直观展示分类结果
+- `top_features.png` —— 前20个最重要特征的排序图
+- `rf_feature_importance.png` —— 随机森林模型识别的关键特征
+- `prediction_probability_distribution.png` —— 预测概率分布图，分析不同类别样本的概率分布
+- `classifiers_performance.png` —— 各分类器性能比较图
+- `feature_importance.csv` —— 前50个最重要特征的详细数据表格
 
 ## 注意事项
 
