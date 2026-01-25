@@ -6,12 +6,17 @@ __pycache__/
 *.pyc
 *.pdb
 
-# virtualenvs
 venv/
 venv*/
 env/
+env*/
 .venv/
-venv39/
+.venv*/
+.venv311/
+python-env/
+
+.pytest_cache/
+.mypy_cache/
 
 # IDE / Editor
 .vscode/
@@ -34,9 +39,7 @@ dist/
 .coverage
 htmlcov/
 
-# Outputs (保留忽略模型输出等)
-output/*.csv
-output/*.png
+output/
 
 # Local config
 .env
