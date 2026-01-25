@@ -41,6 +41,13 @@ htmlcov/
 
 output/
 
+# 数据目录中体积较大的派生文件（不入库，避免超限）
+data/integrated/
+data/preprocessed/
+data/**/processed*.csv
+data/GEO/geo_processed.csv
+data/STAD/stad_processed.csv
+
 # Local config
 .env
 local_settings.py
