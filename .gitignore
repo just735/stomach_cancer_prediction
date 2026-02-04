@@ -6,12 +6,17 @@ __pycache__/
 *.pyc
 *.pdb
 
-# virtualenvs
 venv/
 venv*/
 env/
+env*/
 .venv/
-venv39/
+.venv*/
+.venv311/
+python-env/
+
+.pytest_cache/
+.mypy_cache/
 
 # IDE / Editor
 .vscode/
@@ -34,9 +39,14 @@ dist/
 .coverage
 htmlcov/
 
-# Outputs (保留忽略模型输出等)
-output/*.csv
-output/*.png
+output/
+
+# 数据目录中体积较大的派生文件（不入库，避免超限）
+data/integrated/
+data/preprocessed/
+data/**/processed*.csv
+data/GEO/geo_processed.csv
+data/STAD/stad_processed.csv
 
 # Local config
 .env
