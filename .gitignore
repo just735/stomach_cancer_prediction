@@ -51,3 +51,6 @@ data/STAD/stad_processed.csv
 # Local config
 .env
 local_settings.py
+external/
+/external/
+/.venv311/
