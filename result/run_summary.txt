@@ -1,0 +1,8 @@
+seed=57
+threshold_cv=0.5789
+threshold_target=0.4900
+in_target_range=True
+cv_accuracy=0.6529
+test_accuracy=0.9286
+test_f1=0.9333
+test_auc=0.9592

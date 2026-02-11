@@ -6,6 +6,10 @@
 
 本研究旨在利用基因表达数据和临床数据构建胃癌远处转移预测模型，通过多种机器学习方法和生物信息学分析技术，探索潜在的预后生物标志物，为胃癌患者的个体化治疗和预后评估提供科学依据。
 
+## 系统介绍
+
+本系统提供两条可并行的预测路径：一条面向多GEO表达谱整合的随机森林预测流程，另一条面向TCGA-STAD临床特征的快速预测流程。系统包含数据清洗、特征预处理、模型训练、阈值选择与结果输出，结果文件统一保存在 `result/` 与 `output/` 下，便于复现与评估。
+
 ### 主要研究内容：
 
 1. **数据整合**：整合多个GEO数据集和TCGA-STAD数据，提取转移相关样本
@@ -211,6 +215,43 @@ python code/predict_stad_metastasis.py
    - 如果特征数 > 10，会自动进行特征选择（SelectKBest）
    - 最多选择100个最重要的特征
 
+## 实验结论与成果
+
+### GEO表达谱随机森林实验（predict_rf.py）
+
+- 最佳模型：随机森林（RF）
+- 指标（测试集）：Accuracy 0.8571、F1 0.8571、AUC 0.9388
+- 结果文件：output/r_pipeline/prediction_rf/model_performance.csv，output/r_pipeline/prediction_rf/predictions_all.csv
+
+结论：GEO整合数据上的RF模型表现稳定，准确率与AUC均较高，阈值调节后保持目标区间准确率。
+
+相关表达谱特征（Top10探针）：
+226828_s_at、219463_at、1569003_at、1566690_at、204241_at、201506_at、227792_at、222795_s_at、225311_at、201308_s_at
+
+### TCGA-STAD临床特征模型（STAD）
+
+- 指标（测试集）：Accuracy 0.9773、F1 0.8333、AUC 0.9980
+- 结果目录：output/STAD/20260211_210124/
+
+结论：基于STAD临床特征的RF模型在AUC上达到极高水平，说明临床分期与转移相关字段具备强预测性；F1略低提示正负类不均衡下仍有改进空间。
+
+相关临床因素（Top10重要特征）：
+diagnoses.ajcc_pathologic_stage、diagnoses.residual_disease、diagnoses.days_to_last_follow_up、diagnoses.age_at_diagnosis、diagnoses.ajcc_pathologic_t、diagnoses.ajcc_pathologic_n、demographic.age_at_index、demographic.vital_status、diagnoses.tumor_grade、demographic.gender
+
+### GEO多模型对比实验（predict.py）
+
+- 最佳模型：RF
+- 指标（测试集）：Accuracy 0.8571、F1 0.8571、AUC 0.9388
+- 结果文件：output/r_pipeline/prediction/model_performance.csv，output/r_pipeline/prediction/predictions_all.csv
+
+结论：多模型对比中RF在当前划分上取得最高准确率，AUC保持在较高水平，适合作为GEO流程的默认模型。
+
+### 项目成果汇总
+
+- 形成两类可复现的预测流程：GEO表达谱与STAD临床特征
+- 输出可直接复用的模型与预测结果文件
+- 统一的结果目录结构便于后续对比与融合建模
+
 ## 环境要求
 
 ### Python版本
@@ -254,30 +295,26 @@ pip install xgboost   # 用于XGBoost模型
 ```
 .
 ├── code/                          # 代码目录
-│   ├── 1_data_integration.py      # 数据整合
-│   ├── 2_data_preprocessing.py    # 数据预处理
-│   ├── 3_differential_genes.py    # 差异基因筛选
-│   ├── 4_wgcna_analysis.py        # WGCNA分析
-│   ├── 5_target_gene_selection.py # 靶基因筛选
-│   ├── 6_lasso_selection.py       # LASSO回归
-│   ├── 7_model_training.py        # 模型训练
-│   ├── process_geo_data.py        # GEO数据清洗（简化流程）
-│   ├── predict_geo_metastasis.py  # GEO预测（简化流程）
-│   ├── process_stad_data.py         # STAD数据清洗（简化流程）
-│   └── predict_stad_metastasis.py # STAD预测（简化流程）
+│   ├── R/                         # R分析脚本
+│   ├── STAD/                      # STAD临床预测脚本
+│   ├── build_geo_clean_dataset.py
+│   ├── gastric_metastasis_pipeline.py
+│   ├── gastric_metastasis_prediction_pipeline.R
+│   ├── gastric_model_training.R
+│   ├── predict.py
+│   └── predict_rf.py
 ├── data/                          # 数据目录
 │   ├── GEO/                       # GEO数据集
 │   ├── STAD/                      # TCGA-STAD数据集
-│   ├── integrated/                # 整合后的数据
-│   ├── preprocessed/              # 预处理后的数据
-│   ├── differential_genes/         # 差异基因结果
-│   ├── wgcna/                     # WGCNA分析结果
-│   ├── target_genes/              # 靶基因结果
-│   └── biomarkers/                # 生物标志物结果
+│   ├── STAD_processed/            # STAD处理后数据
+│   ├── kaggle/                    # Kaggle表达谱
+│   ├── processed_gastric/         # 处理后的表达谱数据
+│   └── geodata.csv                # GEO整合数据
 ├── output/                        # 输出目录
-│   ├── GEO/                       # GEO预测结果
 │   ├── STAD/                      # STAD预测结果
-│   └── models/                    # 模型训练结果
+│   ├── gastric/                   # 胃癌综合流程输出
+│   └── r_pipeline/                # R/Python流程输出
+├── result/                        # 固化结果与图表
 └── README.md                      # 本文件
 ```
 
@@ -296,10 +333,9 @@ pip install xgboost   # 用于XGBoost模型
 
 ### 简化流程输出
 
-每个数据集都会生成：
-- `predictions.csv` - 测试集预测结果（包含真实标签、预测标签、预测概率）
-- `predictions_all.csv` - 全部样本预测结果
-- `roc_curve.png` - ROC曲线图（如果成功生成）
+- GEO多模型对比：`output/r_pipeline/prediction/`
+- GEO随机森林：`output/r_pipeline/prediction_rf/`
+- STAD临床模型：`output/STAD/`
 
 ## 常见问题
 

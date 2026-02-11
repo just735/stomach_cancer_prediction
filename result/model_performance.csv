@@ -1,0 +1,2 @@
+model,accuracy,f1,auc,seed,ap,threshold,in_target_range,params
+RF,0.9285714285714286,0.9333333333333333,0.9591836734693878,57,0.9617346938775508,0.48999999999999994,True,"{'rf__n_estimators': 600, 'rf__min_samples_split': 8, 'rf__min_samples_leaf': 3, 'rf__max_features': 'log2', 'rf__max_depth': 5, 'rf__class_weight': 'balanced', 'rf__bootstrap': True, 'kbest__k': 50}"
