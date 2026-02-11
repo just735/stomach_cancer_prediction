@@ -72,6 +72,10 @@ def main():
         json.dump(search.best_params_, f, ensure_ascii=False, indent=2)
     perf = pd.DataFrame([{"model": "RF", "accuracy": acc, "f1": f1, "auc": auc}])
     perf.to_csv(RUN_DIR / "model_performance.csv", index=False)
+    fi = pd.DataFrame(
+        {"feature": X.columns, "importance": best_model.feature_importances_}
+    ).sort_values("importance", ascending=False)
+    fi.to_csv(RUN_DIR / "feature_importance.csv", index=False)
     res_test = pd.DataFrame(
         {"sample_id": id_test, "true": y_test, "pred": preds, "prob_positive": probs}
     )

@@ -1,0 +1,66 @@
+胃癌远处转移预测实验结论（整合RF与STAD临床模型）
+
+一、GEO+RF随机森林实验（predict_rf.py）
+1) 数据入口：data/geodata.csv（若缺失则使用 output/r_pipeline/clean_dataset.csv）
+2) 最佳模型：随机森林（RF）
+3) 指标（测试集）：
+   - Accuracy: 0.9286
+   - F1: 0.9333
+   - AUC: 0.9592
+   - AP: 0.9617
+4) 阈值与种子：
+   - seed=57
+   - threshold_target=0.4900
+5) 结果文件：
+   - result/model_performance.csv
+   - result/predictions_test.csv
+   - result/predictions_all.csv
+   - result/feature_importance.csv
+   - result/figures/*
+
+结论：GEO整合数据上的RF模型表现稳定，准确率与AUC均较高，阈值调节后保持目标区间准确率。
+
+与远处转移相关的表达谱特征（Top10探针）：
+- 226828_s_at
+- 219463_at
+- 1569003_at
+- 1566690_at
+- 204241_at
+- 201506_at
+- 227792_at
+- 222795_s_at
+- 225311_at
+- 201308_s_at
+
+二、TCGA-STAD临床特征模型（STAD）
+1) 数据入口：data/STAD/clinical.project-tcga-stad.2026-01-25/clinical.tsv
+2) 处理脚本：code/STAD/process_stad_data.py
+3) 模型脚本：code/STAD/predict_stad_metastasis.py
+4) 指标（测试集）：
+   - Accuracy: 0.9773
+   - F1: 0.8333
+   - AUC: 0.9980
+5) 结果目录：
+   - output/STAD/20260211_210124/
+     - model_performance.csv
+     - predictions_test.csv
+     - predictions_all.csv
+     - rf_model.pkl
+     - feature_importance.csv
+
+结论：基于STAD临床特征的RF模型在AUC上达到极高水平，说明临床分期与转移相关字段具备强预测性；F1略低提示正负类不均衡下仍有改进空间。
+
+与远处转移相关的临床因素（Top10重要特征）：
+- diagnoses.ajcc_pathologic_stage
+- diagnoses.residual_disease
+- diagnoses.days_to_last_follow_up
+- diagnoses.age_at_diagnosis
+- diagnoses.ajcc_pathologic_t
+- diagnoses.ajcc_pathologic_n
+- demographic.age_at_index
+- demographic.vital_status
+- diagnoses.tumor_grade
+- demographic.gender
+
+综合结论：
+本项目在两类数据场景（GEO表达谱与STAD临床特征）均得到稳定的RF预测性能。表达谱模型适合跨队列的转移风险评估，STAD临床模型适合临床场景的快速预测，可作为后续融合模型的基础。
