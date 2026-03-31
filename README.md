@@ -1,3 +1,113 @@
+# Prediction-model-of-distant-metastasis-of-breast-cancer
+
+项目：基于多源基因表达数据与机器学习的胃癌远处转移预测与生物标志物挖掘
+
+本仓库包含用于构建、评估和汇总胃癌远处转移预测模型的脚本与结果，重点脚本为 `code/predict_rf.py`，该脚本实现了多源数据预处理（含简单回归批次效应去除）、候选随机种子筛选、随机森林模型搜索、阈值选择与结果保存；在有 GPU 且安装 PyTorch 时，会提供基于轻量 MLP 的可选训练路径。
+
+---
+
+**目录结构（核心）**
+- `code/`：脚本目录，主要文件：`predict_rf.py`（重点）、`predict.py`、`collect_results.py`。
+- `data/geodata.csv`：项目默认输入数据（或 `output/r_pipeline/clean_dataset.csv` 回退）。
+- `output/`：所有运行结果均输出至 `output/r_pipeline/...` 或 `output/summary/`。
+
+---
+
+**快速开始（环境与依赖）**
+- 建议使用 Python 3.9+ 虚拟环境。示例安装：
+
+```powershell
+python -m venv .venv311
+.\.venv311\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install pandas numpy scikit-learn matplotlib seaborn joblib
+# 可选（GPU/MLP）：
+pip install torch
+```
+
+（如果你已有虚拟环境并已安装依赖，可跳过）
+
+---
+
+**输入数据格式要求**
+- 文件：`data/geodata.csv`（或 `output/r_pipeline/clean_dataset.csv`）
+- 列：必须包含 `sample_id` （可选）、`label`，以及多个基因表达列。
+- `label` 值应为 `metastasis`（阳性）或 `control`（阴性）。
+- 可选的批次列名（脚本自动检测）：`batch`, `Batch`, `batch_id`, `BatchID`, `dataset`, `study`, `platform`, `source`, `center`。
+
+脚本会自动将非数值列转为数值（无法解析的值填为 0），并在检测到批次列时尝试使用回归方法去除批次效应。
+
+---
+
+**重点：`code/predict_rf.py` 使用说明**
+
+- 功能概览：
+  - 自动加载数据并尝试去除批次效应（回归逐基因法）。
+  - 候选随机种子快速筛选（`rank_seeds`），选择表现稳定的若干种子用于后续搜索。
+  - 在每个候选种子上进行模型搜索：默认使用 `RandomizedSearchCV` 对 `RandomForest` 管道进行超参数搜索；若检测到可用 GPU 且安装了 `torch`，将改为尝试使用轻量 `TorchMLPWrapper` 作为可选路径以利用 GPU 加速（小网格）。
+  - 使用交叉验证概率输出选取最佳判别阈值，并在测试集合上评估 ACC、F1、AUC 等指标。
+  - 保存模型、阈值、特征重要性（若适用）、混淆矩阵图、ROC/PR 曲线、预测结果与性能表。
+
+- 运行示例：在项目根目录下执行：
+
+```powershell
+& .\.venv311\Scripts\Activate.ps1
+python code/predict_rf.py
+```
+
+- 主要输出（每次运行会在 `output/r_pipeline/prediction_rf/<timestamp>/` 下生成一套结果）：
+  - `model_performance.csv`：模型性能摘要（model, accuracy, f1, auc, seed, ...）。
+  - `predictions_all.csv` / `predictions_test.csv`：样本级预测与概率。
+  - `rf_model.pkl`（或 `gpu_model.pth`）：保存的模型（sklearn 使用 joblib，PyTorch 使用 state_dict）。
+  - `feature_importance.csv` 与 `feature_importance_top30.png`：仅在 sklearn RF 路径可用。
+  - `roc_curve.png`, `pr_curve.png`, `confusion_matrix.png`：可视化图像。
+  - `best_params.json`、`best_threshold.json`、`run_summary.txt`：运行记录与参数。
+
+- 常见可调整参数（在脚本顶部常量）：
+  - `TEST_SIZE`：测试集占比（默认 0.1）。
+  - `TARGET_ACC_MIN` / `TARGET_ACC_MAX`：阈值搜索目标区间。
+  - 其他超参数在脚本内部的搜索空间中可修改以满足需要。
+
+- 注意事项：
+  - 若环境缺少 `scikit-learn` 等依赖，脚本会报错，请先安装对应包。
+  - PyTorch 为可选依赖：若未安装或无 GPU，则使用 sklearn 的默认 CPU 路径。
+  - 当前批次校正为回归逐基因方法，适合快速去批次验算；对更严格的生物学分析建议使用 ComBat（R 包 `sva`）或更复杂的批次校正流程。
+
+---
+
+**`code/predict.py`（简要）**
+- 作用：对多种模型（LR、SVM、RF、ET、GBDT、LDA、QDA、KNN）进行网格搜索并比较性能；在有 GPU 时也会训练一个简易的 PyTorch MLP 作为备选。
+- 输出：`output/r_pipeline/prediction/` 下的 `model_performance.csv`, `best_model_*.pkl/.pth`, `predictions.csv`, `predictions_all.csv`。
+
+---
+
+**`code/collect_results.py`（简要）**
+- 作用：在工作区内搜索所有 `model_performance.csv`，聚合为 `output/summary/aggregated_model_performance.csv`，并生成汇总统计与可视化图表（如 mean ± std 条形图）。
+- 使用示例：
+
+```powershell
+python code/collect_results.py --workspace . --out output/summary
+```
+
+---
+
+**调试与常见问题**
+- 报错 `ModuleNotFoundError: No module named 'sklearn'`：安装 `scikit-learn`。类似地需安装 `pandas', `numpy', `matplotlib` 等。
+- 批次校正提示失败：脚本会捕获并记录该错误，流程会继续。若需更严谨的批次校正，请在 R 中使用 `ComBat` 后将清洗后的表达矩阵放置为 `data/geodata.csv`。
+
+---
+
+**复现实验与结果复盘**
+- 所有运行会在 `output/r_pipeline/` 下生成时间戳目录，建议保留这些目录以便横向比对。已实现的聚合脚本会把多次实验结果合并到 `output/summary/` 以便统计分析。
+
+---
+
+如果你希望我：
+- 把 `README.md` 转为 LaTeX/Word 或生成期刊格式的 Methods/Results 部分；
+- 生成 `requirements.txt` 或 `environment.yml`；
+- 为 `code/predict_rf.py` 增加命令行参数支持（例如指定输入文件、输出目录、GPU 强制或禁用开关），
+
+请告诉我你想优先的下一步。
 # 胃癌远处转移预测研究
 
 本仓库用于基于多数据集的胃癌远处转移预测研究。包含完整的数据整合、预处理、特征筛选和模型训练流程，旨在提供全面的胃癌预后预测和生物标志物发现平台。
